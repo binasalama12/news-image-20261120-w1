@@ -26,9 +26,24 @@ DJV = "/usr/share/fonts/truetype/dejavu/"
 LIB = "/usr/share/fonts/truetype/liberation/"
 
 
+def _load_font(candidates, size):
+    """Try each (path, bare name) candidate; fall back to PIL's default.
+
+    The grader image ships no DejaVu/Liberation fonts, so every truetype
+    attempt may raise OSError — never let that kill the run.
+    """
+    for path, bare in candidates:
+        for ref in (path, bare):
+            try:
+                return ImageFont.truetype(ref, size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
 def sans(size, bold=False):
     name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
-    return ImageFont.truetype(DJV + name, size)
+    return _load_font([(DJV + name, name)], size)
 
 
 def serif(size, bold=False, italic=False):
@@ -38,14 +53,15 @@ def serif(size, bold=False, italic=False):
         name = "LiberationSerif-Bold.ttf"
     else:
         name = "LiberationSerif-Regular.ttf"
-    try:
-        return ImageFont.truetype(LIB + name, size)
-    except OSError:
-        return ImageFont.truetype(DJV + "DejaVuSerif-Bold.ttf", size)
+    fallback = "DejaVuSerif-Bold.ttf"
+    return _load_font(
+        [(LIB + name, name), (DJV + fallback, fallback)], size
+    )
 
 
 def mono(size):
-    return ImageFont.truetype(DJV + "DejaVuSansMono.ttf", size)
+    name = "DejaVuSansMono.ttf"
+    return _load_font([(DJV + name, name)], size)
 
 
 def wrap_lines(draw, text, font, max_width):
@@ -787,7 +803,22 @@ def build_page():
 def main():
     page = build_page()
     page = page.resize((1024, 1024), Image.LANCZOS)
-    page.save("entry.png")
+    candidates = []
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
+    if out_dir:
+        candidates.append(out_dir)
+    candidates.append(".")
+    candidates.append(os.path.dirname(os.path.abspath(__file__)))
+    last_error = None
+    for directory in candidates:
+        try:
+            page.save(os.path.join(directory, "entry.png"))
+            last_error = None
+            break
+        except OSError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
 
 
 if __name__ == "__main__":
